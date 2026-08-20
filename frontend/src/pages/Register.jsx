@@ -6,6 +6,7 @@ export default function Register() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -25,7 +26,7 @@ export default function Register() {
 
     setSubmitting(true);
     try {
-      await api.register(username, password);
+      await api.register(username, password, inviteCode);
       setSubmitted(true);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
@@ -61,6 +62,17 @@ export default function Register() {
         </p>
 
         {error && <div className="alert alert-error">{error}</div>}
+
+        <label htmlFor="inviteCode">Invite code</label>
+        <input
+          id="inviteCode"
+          type="text"
+          value={inviteCode}
+          onChange={(e) => setInviteCode(e.target.value)}
+          placeholder="Ask an admin for this"
+          autoComplete="off"
+          required
+        />
 
         <label htmlFor="username">Username</label>
         <input

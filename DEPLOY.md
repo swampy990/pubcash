@@ -28,30 +28,7 @@ or `nslookup cash.mypub.co.uk` before moving on.
 
 Note the droplet's public IPv4 address once it's created.
 
-## 3. SSH in and install Docker
-
-```bash
-ssh root@<droplet-ip>
-
-curl -fsSL https://get.docker.com | sh
-```
-
-That installs Docker Engine, the CLI, and the Compose plugin (so `docker compose ...`, with a
-space, works — this guide uses that form throughout).
-
-## 4. Lock down the firewall
-
-Only SSH, HTTP, and HTTPS need to be reachable from the internet — everything else (Postgres,
-the API, the frontend) is only exposed to other containers, not the outside world.
-
-```bash
-ufw allow OpenSSH
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw enable
-```
-
-## 5. Get the code onto the server
+## 3. Get the code onto the server
 
 Either upload the zip you were given:
 
@@ -72,11 +49,11 @@ git clone <your-repo-url> pub-cash-management
 cd pub-cash-management
 ```
 
-## 6. Configure environment variables
+## 4. Configure environment variables
 
 ```bash
 cp .env.example .env
-nano .env
+vi .env
 ```
 
 Set, at minimum:
@@ -96,15 +73,43 @@ Set, at minimum:
 `VITE_API_URL` in `.env` is ignored by the production compose file (it always builds the
 frontend to call `/api` on the same domain, proxied by Caddy) — no need to touch it.
 
-## 7. Start it
+## 5. Install Docker, lock down the firewall, and start it
+
+**Option A — run the bootstrap script (recommended):**
 
 ```bash
+sudo ./scripts/bootstrap-server.sh
+```
+
+This installs Docker Engine + the Compose plugin (skipped if already installed), configures
+`ufw` to only allow SSH/80/443, double-checks none of your `.env` values are still the example
+placeholders (and refuses to continue if some are — go fix them and re-run), does a best-effort
+check that `DOMAIN` actually resolves to this server, and then runs
+`docker compose -f docker-compose.prod.yml up -d --build`. It's safe to re-run any time — each
+step checks whether it's already done. Postgres itself needs no separate setup step: the `db`
+container creates its role/database from `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB` the
+first time it starts, the same way every time, so there's nothing to run "as the postgres user"
+by hand.
+
+**Option B — do it by hand**, if you'd rather see each step:
+
+```bash
+# Install Docker
+curl -fsSL https://get.docker.com | sh
+
+# Firewall - only SSH, HTTP, HTTPS reachable from the internet
+ufw allow OpenSSH
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw enable
+
+# Build and start everything
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-First run builds the images, starts Postgres, runs the database migrations, seeds the initial
-admin account, and asks Caddy to obtain a certificate — give it a minute or two. Watch progress
-with:
+Either way, first run builds the images, starts Postgres, runs the database migrations, seeds
+the initial admin account, and asks Caddy to obtain a certificate — give it a minute or two.
+Watch progress with:
 
 ```bash
 docker compose -f docker-compose.prod.yml logs -f
@@ -112,7 +117,7 @@ docker compose -f docker-compose.prod.yml logs -f
 
 (`Ctrl+C` to stop following logs — the containers keep running.)
 
-## 8. Log in
+## 6. Log in
 
 Visit `https://<your-domain>`. Log in with the initial admin account from your `.env`, **change
 its password immediately**, then add your tills (Till Session → Manage tills) and approve any

@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     initial_admin_username: str = "admin"
     initial_admin_password: str = "ChangeMe123!"
 
+    # Anyone registering a new account must supply this code (share it with staff out-of-band,
+    # e.g. verbally or on a notice board - it's not a secret worth emailing around). Rotate it by
+    # changing this value and restarting the backend. An empty value means registration is wide
+    # open with no code required - not recommended once the site is internet-facing.
+    registration_invite_code: str = "change-me-invite-code"
+
     # Business rules
     variance_alert_threshold: float = 5.00  # GBP amount that triggers a discrepancy alert
 

@@ -1,7 +1,10 @@
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User, UserRole, UserStatus
@@ -13,6 +16,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    # An empty configured code means invite codes are disabled (open registration).
+    if settings.registration_invite_code and not secrets.compare_digest(
+        payload.invite_code, settings.registration_invite_code
+    ):
+        raise HTTPException(status_code=400, detail="Invalid invite code")
+
     existing = db.query(User).filter(User.username == payload.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="Username is already taken")

@@ -13,8 +13,9 @@ The frontend and backend are fully decoupled: a React single-page app talks to a
 
 ## Features
 
-- **Login / registration**: users register with a username and password; new accounts start
-  as `pending` and cannot log in until an admin approves them.
+- **Login / registration**: users register with a username, password, and a shared invite code
+  (set via `REGISTRATION_INVITE_CODE`); new accounts start as `pending` and cannot log in until
+  an admin approves them.
 - **Admin controls**: approve pending accounts, suspend/reactivate accounts, delete accounts,
   and trigger a password reset (generates a temporary password the user must change on next login).
 - **Roles**: `admin` (full access, including user management) and `staff` (can only see and
@@ -33,6 +34,14 @@ The frontend and backend are fully decoupled: a React single-page app talks to a
 
 - [Docker](https://docs.docker.com/get-docker/) and Docker Compose (bundled with recent Docker
   Desktop / Docker Engine as `docker compose`).
+
+## Deploying to a live server (DigitalOcean or similar)
+
+For a headless server with a domain name and general (internet) access, use
+**[DEPLOY.md](./DEPLOY.md)** and `docker-compose.prod.yml` instead of the steps below —
+it walks through the whole thing over SSH, with Caddy handling automatic HTTPS and only
+ports 80/443 exposed. The "Getting started" section below is for running it on your own
+machine (`localhost`) while developing.
 
 ## Getting started
 
@@ -106,9 +115,10 @@ flows the first time you use them.
 
 - Change `SECRET_KEY` and the initial admin password before exposing this beyond your own
   machine.
-- The API currently allows registration by anyone; consider adding a shared invite code or
-  disabling public registration if the app will be internet-facing.
+- Registration requires a shared `REGISTRATION_INVITE_CODE` (set in `.env`) in addition to
+  admin approval — change it from the default before going live, and share the real value with
+  staff out-of-band rather than posting it publicly.
 - Deleting a user is blocked if they have till session or safe transaction history (for audit
   reasons) — suspend the account instead in that case.
-- For production use beyond a single trusted local network, put this behind HTTPS (e.g. a
-  reverse proxy like Caddy or Traefik in front of the `frontend`/`backend` containers).
+- For production use beyond a single trusted local network, put this behind HTTPS — see
+  [DEPLOY.md](./DEPLOY.md), which sets this up with a Caddy reverse proxy automatically.

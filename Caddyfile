@@ -1,0 +1,23 @@
+# Caddy is the only container exposed to the internet. It terminates HTTPS
+# (automatic Let's Encrypt certificate, auto-renewed) and reverse-proxies:
+#   - /api/*  -> the FastAPI backend (path prefix stripped before forwarding)
+#   - everything else -> the built React app
+#
+# {$DOMAIN} and {$CADDY_ACME_EMAIL} come from the .env file used by
+# docker-compose.prod.yml.
+
+{
+	email {$CADDY_ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode gzip
+
+	handle_path /api/* {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		reverse_proxy frontend:80
+	}
+}

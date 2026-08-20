@@ -1,0 +1,75 @@
+# Production deployment (e.g. a DigitalOcean droplet with a domain pointed at it).
+#
+# Usage:
+#   cp .env.example .env   # then edit .env - see DEPLOY.md
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Caddy is the only service with published ports (80/443) and gets a free,
+# auto-renewing HTTPS certificate for DOMAIN. Postgres, the backend, and the
+# frontend's nginx are only reachable from other containers on the internal
+# Docker network - not from the internet.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pubcash}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pubcash}
+      POSTGRES_DB: ${POSTGRES_DB:-pubcash}
+    volumes:
+      - pubcash_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pubcash}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://pubcash:pubcash@db:5432/pubcash}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in .env for production}
+      CORS_ORIGINS: https://${DOMAIN}
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD must be set in .env for production}
+      VARIANCE_ALERT_THRESHOLD: ${VARIANCE_ALERT_THRESHOLD:-5.00}
+      REGISTRATION_INVITE_CODE: ${REGISTRATION_INVITE_CODE:?REGISTRATION_INVITE_CODE must be set in .env for production - anyone with the URL can otherwise register}
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Same-origin relative path - the browser calls https://<domain>/api/...
+        # and Caddy proxies that to the backend, so no CORS round-trip is needed.
+        VITE_API_URL: /api
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - frontend
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN must be set in .env - e.g. cash.mypub.co.uk}
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:-admin@example.com}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pubcash_db_data:
+  caddy_data:
+  caddy_config:
