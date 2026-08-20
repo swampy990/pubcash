@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pubcash}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pubcash}
+      POSTGRES_DB: ${POSTGRES_DB:-pubcash}
+    volumes:
+      - pubcash_db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pubcash}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://pubcash:pubcash@db:5432/pubcash}
+      SECRET_KEY: ${SECRET_KEY:-change-me-to-a-long-random-string}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080}
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-ChangeMe123!}
+      VARIANCE_ALERT_THRESHOLD: ${VARIANCE_ALERT_THRESHOLD:-5.00}
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  pubcash_db_data:
