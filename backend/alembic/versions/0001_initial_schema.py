@@ -19,10 +19,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    user_role = postgresql.ENUM("admin", "staff", name="user_role")
-    user_status = postgresql.ENUM("pending", "active", "suspended", name="user_status")
-    till_session_status = postgresql.ENUM("open", "closed", name="till_session_status")
-    safe_transaction_type = postgresql.ENUM("drop", "withdrawal", "adjustment", name="safe_transaction_type")
+    # create_type=False on each: without it, SQLAlchemy ALSO auto-creates the type as part of
+    # emitting each create_table() DDL below, on top of the explicit .create() calls right
+    # after this - i.e. it tries to create every type twice in one migration and the second
+    # attempt fails with "already exists". Creating them explicitly (once, with checkfirst) and
+    # telling the column type not to repeat that is the standard fix for this exact gotcha.
+    user_role = postgresql.ENUM("admin", "staff", name="user_role", create_type=False)
+    user_status = postgresql.ENUM("pending", "active", "suspended", name="user_status", create_type=False)
+    till_session_status = postgresql.ENUM("open", "closed", name="till_session_status", create_type=False)
+    safe_transaction_type = postgresql.ENUM(
+        "drop", "withdrawal", "adjustment", name="safe_transaction_type", create_type=False
+    )
 
     bind = op.get_bind()
     user_role.create(bind, checkfirst=True)

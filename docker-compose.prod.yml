@@ -8,6 +8,11 @@
 # auto-renewing HTTPS certificate for DOMAIN. Postgres, the backend, and the
 # frontend's nginx are only reachable from other containers on the internal
 # Docker network - not from the internet.
+#
+# Explicit project name below so this never shares volumes with docker-compose.yml (dev) if
+# both are ever run from the same checkout - they'd otherwise both default to a project name
+# derived from the directory and silently share the same Postgres data.
+name: pubcash-prod
 
 services:
   db:

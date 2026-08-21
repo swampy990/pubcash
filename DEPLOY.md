@@ -142,6 +142,30 @@ docker compose -f docker-compose.prod.yml exec db pg_dump -U pubcash pubcash > b
 Copy the resulting `.sql` file off the droplet somewhere safe (e.g. `scp` it to your own
 machine) — a droplet backup alone isn't a substitute for keeping a copy elsewhere.
 
+## If the backend keeps restarting with a "type ... already exists" error
+
+Versions of this project before the initial migration was fixed had a bug where it tried to
+create each Postgres ENUM type twice in the same migration (once explicitly, once implicitly
+via `create_table`) — the second attempt always failed with `DuplicateObject: type "..." already
+exists`, on every fresh database, every time. If you're on a build from before that fix, update
+to a current copy of the project (the migration file is
+`backend/alembic/versions/0001_initial_schema.py`) and reset the database so the corrected
+migration runs cleanly:
+
+```bash
+docker compose -f docker-compose.prod.yml down -v
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+`-v` removes the named volumes (`pubcash_db_data`, plus Caddy's certificate cache) along with
+the containers, so this is a genuine "start over" — **only do this if you don't have real cash
+data in there yet.** If you do, restoring from a `pg_dump` backup (see above) instead of wiping
+is the safe path; ask if you need a hand with that.
+
+If you're already on a current copy and still see this, something else left the database in a
+state Alembic doesn't recognize (e.g. manual `psql` changes) — the same reset fixes it for
+non-production data.
+
 ## Things worth knowing
 
 - **Registration is gated by an invite code**: the register page now also asks for the
@@ -158,3 +182,7 @@ machine) — a droplet backup alone isn't a substitute for keeping a copy elsewh
   logged out) — not harmful, just worth doing at a quiet time.
 - **Local development is unaffected**: `docker-compose.yml` (no `.prod`) still runs everything
   on `localhost` with published ports, exactly as before, for working on the app on your laptop.
+- **Dev and prod now use separate Docker volumes**: both compose files set an explicit project
+  `name`, so `docker-compose.yml` and `docker-compose.prod.yml` never accidentally share a
+  Postgres volume if both are ever run from the same checkout (they used to default to the same
+  project name derived from the directory, which could let dev and prod data collide).
