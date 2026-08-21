@@ -60,6 +60,29 @@ export default function TillSessionPage() {
 
   const tillHasOpenSession = (tillId) => sessions.some((s) => s.till_id === tillId && s.status === "open");
 
+  // When the open session for the selected till changes (switching tills, or a session just got
+  // opened/reopened), pre-fill the close form from any existing closing count. For a session
+  // that's been reopened after a previous close, this means editing/correcting that count rather
+  // than recounting the whole till from scratch. For a session that's never been closed before,
+  // closing_breakdown is null and this just clears the form as before.
+  // Keyed only on the session id (not the whole object) so an unrelated data refresh elsewhere on
+  // this page doesn't overwrite whatever the admin is part-way through typing.
+  useEffect(() => {
+    if (openSessionForSelectedTill && openSessionForSelectedTill.closing_breakdown) {
+      setBreakdown(openSessionForSelectedTill.closing_breakdown);
+      setCashSales(
+        openSessionForSelectedTill.cash_sales !== null && openSessionForSelectedTill.cash_sales !== undefined
+          ? String(openSessionForSelectedTill.cash_sales)
+          : ""
+      );
+    } else {
+      setBreakdown(EMPTY_BREAKDOWN);
+      setCashSales("");
+    }
+    setNote("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSessionForSelectedTill?.id]);
+
   const resetForm = () => {
     setBreakdown(EMPTY_BREAKDOWN);
     setCashSales("");
@@ -132,7 +155,7 @@ export default function TillSessionPage() {
     if (
       !window.confirm(
         `Reopen the session on ${tillName} closed ${new Date(session.closed_at).toLocaleString()}? ` +
-          "This clears its closing count so it can be recounted and closed again."
+          "Its previous count stays in place so you can correct it, rather than recounting from scratch."
       )
     ) {
       return;
@@ -143,7 +166,8 @@ export default function TillSessionPage() {
     setSuccess("");
     try {
       await api.reopenTillSession(session.id, reason || undefined);
-      setSuccess("Session reopened.");
+      setSuccess("Session reopened - its previous count is ready to edit below.");
+      setSelectedTillId(session.till_id);
       await loadAll();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to reopen session");
@@ -209,6 +233,13 @@ export default function TillSessionPage() {
                 Opened {new Date(openSessionForSelectedTill.opened_at).toLocaleString()} with opening float £
                 {Number(openSessionForSelectedTill.opening_counted_total).toFixed(2)}
               </p>
+
+              {openSessionForSelectedTill.closing_breakdown && (
+                <div className="alert alert-warning">
+                  This session was reopened — the count below is what was previously recorded.
+                  Correct whatever was wrong, then close it again.
+                </div>
+              )}
 
               <label htmlFor="cash-sales">Cash sales recorded by EPOS/till roll (optional)</label>
               <input

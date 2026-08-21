@@ -24,9 +24,9 @@ The frontend and backend are fully decoupled: a React single-page app talks to a
   (broken down by note/coin denomination), then close it by counting the till again. The app
   computes the expected closing amount (opening float + recorded cash sales − any drops to the
   safe during the session) and flags the variance against what was actually counted. Admins can
-  reopen a closed session (e.g. to fix a mis-counted close) as long as its till doesn't already
-  have a different session open — the previous close is recorded in the session's note rather
-  than silently discarded.
+  reopen a closed session (as long as its till doesn't already have a different session open) to
+  correct a mis-counted close — the previous count is kept and pre-filled into the close form for
+  editing rather than wiped, and what it was before is recorded in the session's note either way.
 - **Safe & drop tracking**: log cash drops from a till into the safe, admin-only withdrawals
   (e.g. banking) and manual adjustments, and see a running safe balance.
 - **Reports** (admin only): a date-range summary (floats, cash sales, variance, safe activity)

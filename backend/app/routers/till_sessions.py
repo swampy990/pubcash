@@ -125,8 +125,9 @@ def reopen_till_session(
             detail="This till already has a different open session - close that one first",
         )
 
-    # Don't silently discard the previous close - keep an audit trail of what it was before
-    # clearing it, since this is undoing a recorded cash count.
+    # Keep an audit trail of what the close was before it gets edited, since this is undoing a
+    # recorded cash count - even though (unlike an earlier version of this endpoint) we no
+    # longer clear the count itself, whatever gets submitted on the next close will overwrite it.
     audit_line = (
         f"[Reopened by {admin.username} at {datetime.utcnow().isoformat()}Z] "
         f"Previous close: counted £{session.closing_counted_total}, "
@@ -137,14 +138,14 @@ def reopen_till_session(
         audit_line += f" Reason given: {payload.reason}"
     session.note = f"{session.note}\n{audit_line}" if session.note else audit_line
 
+    # Deliberately NOT clearing closing_breakdown / closing_counted_total / cash_sales /
+    # expected_closing_total / variance here - the whole point of reopening is to let the
+    # previous count be corrected rather than recounted from scratch. The frontend pre-fills
+    # the close form from these values, and closing the session again overwrites all of them
+    # with whatever's submitted then, so leaving stale numbers here in the meantime is harmless.
     session.status = TillSessionStatus.open
     session.closed_by_id = None
     session.closed_at = None
-    session.closing_breakdown = None
-    session.closing_counted_total = None
-    session.cash_sales = None
-    session.expected_closing_total = None
-    session.variance = None
 
     db.commit()
     db.refresh(session)
