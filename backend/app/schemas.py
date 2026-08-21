@@ -101,6 +101,10 @@ class TillSessionCloseRequest(BaseModel):
         return _validate_breakdown(v)
 
 
+class TillSessionReopenRequest(BaseModel):
+    reason: Optional[str] = None
+
+
 class TillSessionOut(BaseModel):
     id: UUID
     till_id: UUID

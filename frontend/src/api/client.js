@@ -93,6 +93,8 @@ export const api = {
     request("/till-sessions/open", { method: "POST", body: { till_id, opening_breakdown, note } }),
   closeTillSession: (id, closing_breakdown, cash_sales, note) =>
     request(`/till-sessions/${id}/close`, { method: "POST", body: { closing_breakdown, cash_sales, note } }),
+  reopenTillSession: (id, reason) =>
+    request(`/till-sessions/${id}/reopen`, { method: "POST", body: { reason } }),
 
   // Safe
   getSafeBalance: () => request("/safe/balance"),

@@ -50,6 +50,16 @@ export default function TillSessionPage() {
     [sessions]
   );
 
+  const tillNameById = useMemo(() => {
+    const map = {};
+    tills.forEach((t) => {
+      map[t.id] = t.name;
+    });
+    return map;
+  }, [tills]);
+
+  const tillHasOpenSession = (tillId) => sessions.some((s) => s.till_id === tillId && s.status === "open");
+
   const resetForm = () => {
     setBreakdown(EMPTY_BREAKDOWN);
     setCashSales("");
@@ -114,6 +124,29 @@ export default function TillSessionPage() {
       setError(err instanceof ApiError ? err.message : "Failed to close till session");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleReopen = async (session) => {
+    const tillName = tillNameById[session.till_id] || "this till";
+    if (
+      !window.confirm(
+        `Reopen the session on ${tillName} closed ${new Date(session.closed_at).toLocaleString()}? ` +
+          "This clears its closing count so it can be recounted and closed again."
+      )
+    ) {
+      return;
+    }
+    const reason = window.prompt("Optional: why are you reopening this session? (recorded in the session's note)");
+
+    setError("");
+    setSuccess("");
+    try {
+      await api.reopenTillSession(session.id, reason || undefined);
+      setSuccess("Session reopened.");
+      await loadAll();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to reopen session");
     }
   };
 
@@ -223,17 +256,20 @@ export default function TillSessionPage() {
         <table className="table">
           <thead>
             <tr>
+              <th>Till</th>
               <th>Closed</th>
               <th>Opening</th>
               <th>Closing</th>
               <th>Cash sales</th>
               <th>Expected</th>
               <th>Variance</th>
+              {user.role === "admin" && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
             {closedHistory.map((s) => (
               <tr key={s.id}>
+                <td>{tillNameById[s.till_id] || "—"}</td>
                 <td>{new Date(s.closed_at).toLocaleString()}</td>
                 <td>£{Number(s.opening_counted_total).toFixed(2)}</td>
                 <td>£{Number(s.closing_counted_total).toFixed(2)}</td>
@@ -242,6 +278,21 @@ export default function TillSessionPage() {
                 <td className={Math.abs(Number(s.variance)) > 0 ? "variance-flag" : ""}>
                   £{Number(s.variance).toFixed(2)}
                 </td>
+                {user.role === "admin" && (
+                  <td className="actions">
+                    <button
+                      disabled={tillHasOpenSession(s.till_id)}
+                      title={
+                        tillHasOpenSession(s.till_id)
+                          ? "This till already has an open session - close that one first"
+                          : undefined
+                      }
+                      onClick={() => handleReopen(s)}
+                    >
+                      Reopen
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

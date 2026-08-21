@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.constants import compute_breakdown_total
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_admin
 from app.models import (
     Till,
     TillSession,
@@ -16,7 +16,12 @@ from app.models import (
     User,
     UserRole,
 )
-from app.schemas import TillSessionOpenRequest, TillSessionCloseRequest, TillSessionOut
+from app.schemas import (
+    TillSessionOpenRequest,
+    TillSessionCloseRequest,
+    TillSessionReopenRequest,
+    TillSessionOut,
+)
 
 router = APIRouter(prefix="/till-sessions", tags=["till-sessions"])
 
@@ -88,6 +93,59 @@ def open_till_session(
         status=TillSessionStatus.open,
     )
     db.add(session)
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+@router.post("/{session_id}/reopen", response_model=TillSessionOut)
+def reopen_till_session(
+    session_id: UUID,
+    payload: TillSessionReopenRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    session = _get_session_or_404(db, session_id)
+
+    if session.status != TillSessionStatus.closed:
+        raise HTTPException(status_code=400, detail="Only a closed session can be reopened")
+
+    other_open = (
+        db.query(TillSession)
+        .filter(
+            TillSession.till_id == session.till_id,
+            TillSession.status == TillSessionStatus.open,
+            TillSession.id != session.id,
+        )
+        .first()
+    )
+    if other_open:
+        raise HTTPException(
+            status_code=400,
+            detail="This till already has a different open session - close that one first",
+        )
+
+    # Don't silently discard the previous close - keep an audit trail of what it was before
+    # clearing it, since this is undoing a recorded cash count.
+    audit_line = (
+        f"[Reopened by {admin.username} at {datetime.utcnow().isoformat()}Z] "
+        f"Previous close: counted £{session.closing_counted_total}, "
+        f"cash sales £{session.cash_sales}, expected £{session.expected_closing_total}, "
+        f"variance £{session.variance}."
+    )
+    if payload.reason:
+        audit_line += f" Reason given: {payload.reason}"
+    session.note = f"{session.note}\n{audit_line}" if session.note else audit_line
+
+    session.status = TillSessionStatus.open
+    session.closed_by_id = None
+    session.closed_at = None
+    session.closing_breakdown = None
+    session.closing_counted_total = None
+    session.cash_sales = None
+    session.expected_closing_total = None
+    session.variance = None
+
     db.commit()
     db.refresh(session)
     return session

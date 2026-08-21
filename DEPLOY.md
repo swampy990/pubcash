@@ -166,6 +166,23 @@ If you're already on a current copy and still see this, something else left the 
 state Alembic doesn't recognize (e.g. manual `psql` changes) — the same reset fixes it for
 non-production data.
 
+## If Caddy can't get a certificate ("dial tcp: lookup ... 127.0.0.53:53: connection refused")
+
+This is a common Docker-on-Ubuntu issue, not a DNS/domain problem with your site. On hosts using
+`systemd-resolved` (the default on modern Ubuntu), containers can inherit `nameserver 127.0.0.53`
+from the host's `/etc/resolv.conf` — a loopback stub resolver address that's meaningless inside a
+container's own network namespace, so any external lookup (like reaching Let's Encrypt/ZeroSSL to
+get your certificate) fails. `docker-compose.prod.yml` already points the `caddy` service at
+public DNS servers (`8.8.8.8`, `1.1.1.1`) to avoid this — if you're on an older copy of the
+project without that, update it, then:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml logs -f caddy
+```
+
+You should see it obtain a certificate within a few seconds once DNS resolution works.
+
 ## Things worth knowing
 
 - **Registration is gated by an invite code**: the register page now also asks for the

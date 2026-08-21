@@ -66,6 +66,14 @@ services:
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN must be set in .env - e.g. cash.mypub.co.uk}
       CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:-admin@example.com}
+    # Explicit public DNS servers - on Ubuntu hosts using systemd-resolved, containers can
+    # otherwise inherit "nameserver 127.0.0.53" from the host's /etc/resolv.conf, which is a
+    # loopback stub that doesn't exist inside the container's own network namespace. Without
+    # this, Caddy can fail to resolve the ACME/certificate-authority endpoints it needs to reach
+    # to obtain your HTTPS certificate ("dial tcp: lookup ... 127.0.0.53:53: connection refused").
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     ports:
       - "80:80"
       - "443:443"
