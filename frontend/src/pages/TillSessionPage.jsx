@@ -18,6 +18,7 @@ export default function TillSessionPage() {
   const [newTillName, setNewTillName] = useState("");
   const [newTillFloat, setNewTillFloat] = useState("");
   const [creatingTill, setCreatingTill] = useState(false);
+  const [deletingTillId, setDeletingTillId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -175,6 +176,30 @@ export default function TillSessionPage() {
     }
   };
 
+  const handleDeleteTill = async (till) => {
+    if (
+      !window.confirm(
+        `Delete till "${till.name}"? This only works if it has no session history - ` +
+          "a till that's ever been opened will be refused."
+      )
+    ) {
+      return;
+    }
+    setError("");
+    setSuccess("");
+    setDeletingTillId(till.id);
+    try {
+      await api.deleteTill(till.id);
+      setSuccess(`Till "${till.name}" deleted.`);
+      if (selectedTillId === till.id) setSelectedTillId("");
+      await loadAll();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to delete till");
+    } finally {
+      setDeletingTillId(null);
+    }
+  };
+
   const handleReopen = async (session) => {
     const tillName = tillNameById[session.till_id] || "this till";
     if (
@@ -235,6 +260,35 @@ export default function TillSessionPage() {
               {creatingTill ? "Adding..." : "Add till"}
             </button>
           </form>
+
+          {tills.length > 0 && (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Till</th>
+                  <th>Standard float</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tills.map((t) => (
+                  <tr key={t.id}>
+                    <td>{t.name}</td>
+                    <td>£{Number(t.standard_float).toFixed(2)}</td>
+                    <td className="actions">
+                      <button
+                        className="danger"
+                        disabled={deletingTillId === t.id}
+                        onClick={() => handleDeleteTill(t)}
+                      >
+                        {deletingTillId === t.id ? "Deleting..." : "Delete"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </details>
       )}
 

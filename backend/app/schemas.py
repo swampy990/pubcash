@@ -52,6 +52,10 @@ class AdminResetPasswordResponse(BaseModel):
     temporary_password: str
 
 
+class UserRoleUpdateRequest(BaseModel):
+    role: UserRole
+
+
 # ---------- Tills ----------
 
 class TillCreate(BaseModel):

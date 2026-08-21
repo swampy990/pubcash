@@ -17,9 +17,12 @@ The frontend and backend are fully decoupled: a React single-page app talks to a
   (set via `REGISTRATION_INVITE_CODE`); new accounts start as `pending` and cannot log in until
   an admin approves them.
 - **Admin controls**: approve pending accounts, suspend/reactivate accounts, delete accounts,
-  and trigger a password reset (generates a temporary password the user must change on next login).
+  promote a staff account to admin or demote an admin back to staff, and trigger a password reset
+  (generates a temporary password the user must change on next login).
 - **Roles**: `admin` (full access, including user management) and `staff` (can only see and
-  manage their own till sessions and safe entries).
+  manage their own till sessions and safe entries). There must always be at least one admin
+  account, so demoting or deleting the last remaining admin is blocked, and nobody can remove
+  their own admin privileges (an admin can promote or demote anyone but themselves).
 - **Till float & cash counts**: open a till session by counting the starting float
   (broken down by note/coin denomination), then close it by counting the till again. The app
   computes the expected closing amount (opening float + recorded cash sales − any drops to the

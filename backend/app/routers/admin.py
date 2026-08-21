@@ -7,8 +7,8 @@ from datetime import datetime
 
 from app.database import get_db
 from app.deps import require_admin
-from app.models import User, UserStatus
-from app.schemas import UserOut, AdminResetPasswordResponse
+from app.models import User, UserRole, UserStatus
+from app.schemas import UserOut, AdminResetPasswordResponse, UserRoleUpdateRequest
 from app.security import hash_password, generate_temp_password
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -89,6 +89,12 @@ def delete_user(
     user = _get_user_or_404(db, user_id)
     if user.id == admin.id:
         raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    if user.role == UserRole.admin:
+        remaining_admins = (
+            db.query(User).filter(User.role == UserRole.admin, User.id != user.id).count()
+        )
+        if remaining_admins == 0:
+            raise HTTPException(status_code=400, detail="Cannot delete the last remaining admin account")
     try:
         db.delete(user)
         db.commit()
@@ -102,6 +108,36 @@ def delete_user(
             ),
         )
     return None
+
+
+@router.post("/users/{user_id}/role", response_model=UserOut)
+def set_user_role(
+    user_id: UUID,
+    payload: UserRoleUpdateRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    user = _get_user_or_404(db, user_id)
+
+    if payload.role == user.role:
+        return user  # already this role - nothing to do
+
+    if user.id == admin.id and payload.role != UserRole.admin:
+        raise HTTPException(status_code=400, detail="You cannot remove your own admin privileges")
+
+    if payload.role != UserRole.admin:
+        # About to demote this user away from admin - make sure the pub isn't left with no way
+        # to approve accounts, manage tills, etc.
+        remaining_admins = (
+            db.query(User).filter(User.role == UserRole.admin, User.id != user.id).count()
+        )
+        if remaining_admins == 0:
+            raise HTTPException(status_code=400, detail="Cannot demote the last remaining admin account")
+
+    user.role = payload.role
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 @router.post("/users/{user_id}/reset-password", response_model=AdminResetPasswordResponse)

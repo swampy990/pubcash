@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -33,6 +34,16 @@ def delete_till(till_id: UUID, db: Session = Depends(get_db), admin: User = Depe
     till = db.query(Till).filter(Till.id == till_id).first()
     if not till:
         raise HTTPException(status_code=404, detail="Till not found")
-    db.delete(till)
-    db.commit()
+    try:
+        db.delete(till)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This till has session history (open, closed, or cancelled) and can't be deleted "
+                "for audit reasons. Leave it unused instead, or rename it if it was a mistake."
+            ),
+        )
     return None

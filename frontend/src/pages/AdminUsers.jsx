@@ -50,6 +50,18 @@ export default function AdminUsers() {
     await runAction(u.id, () => api.deleteUser(u.id));
   };
 
+  const handlePromote = async (u) => {
+    if (!window.confirm(`Promote "${u.username}" to admin? They'll gain full access, including user management.`)) {
+      return;
+    }
+    await runAction(u.id, () => api.setUserRole(u.id, "admin"));
+  };
+
+  const handleDemote = async (u) => {
+    if (!window.confirm(`Demote "${u.username}" to staff? They'll lose admin access.`)) return;
+    await runAction(u.id, () => api.setUserRole(u.id, "staff"));
+  };
+
   const handleResetPassword = async (u) => {
     if (!window.confirm(`Reset password for "${u.username}"? A new temporary password will be generated.`)) return;
     setError("");
@@ -119,6 +131,16 @@ export default function AdminUsers() {
                   {u.status === "suspended" && (
                     <button disabled={busyId === u.id} onClick={() => runAction(u.id, () => api.reactivateUser(u.id))}>
                       Reactivate
+                    </button>
+                  )}
+                  {u.role === "staff" && (
+                    <button disabled={busyId === u.id} onClick={() => handlePromote(u)}>
+                      Promote to admin
+                    </button>
+                  )}
+                  {u.role === "admin" && u.id !== currentUser.id && (
+                    <button disabled={busyId === u.id} onClick={() => handleDemote(u)}>
+                      Demote to staff
                     </button>
                   )}
                   <button disabled={busyId === u.id} onClick={() => handleResetPassword(u)}>

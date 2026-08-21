@@ -77,6 +77,7 @@ export const api = {
   reactivateUser: (id) => request(`/admin/users/${id}/reactivate`, { method: "POST" }),
   deleteUser: (id) => request(`/admin/users/${id}`, { method: "DELETE" }),
   resetPassword: (id) => request(`/admin/users/${id}/reset-password`, { method: "POST" }),
+  setUserRole: (id, role) => request(`/admin/users/${id}/role`, { method: "POST", body: { role } }),
 
   // Tills
   listTills: () => request("/tills"),
