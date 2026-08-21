@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import DenominationCounter, { breakdownTotal } from "../components/DenominationCounter";
@@ -10,6 +10,9 @@ export default function SafePage() {
   const [balance, setBalance] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [openSessions, setOpenSessions] = useState([]);
+  const [closedSessions, setClosedSessions] = useState([]);
+  const [tills, setTills] = useState([]);
+  const [dayCloses, setDayCloses] = useState([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(true);
@@ -21,17 +24,32 @@ export default function SafePage() {
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const [importingId, setImportingId] = useState(null);
+
+  const [showDayClose, setShowDayClose] = useState(false);
+  const [dayCloseBreakdown, setDayCloseBreakdown] = useState(EMPTY_BREAKDOWN);
+  const [dayCloseNote, setDayCloseNote] = useState("");
+  const [closingDay, setClosingDay] = useState(false);
+
   const load = async () => {
     setLoading(true);
     try {
-      const [balanceRes, txRes, sessionsRes] = await Promise.all([
+      const calls = [
         api.getSafeBalance(),
         api.listSafeTransactions(),
         api.listTillSessions({ status_filter: "open" }),
-      ]);
+        api.listTillSessions({ status_filter: "closed" }),
+        api.listTills(),
+      ];
+      if (user.role === "admin") calls.push(api.listDayCloses());
+
+      const [balanceRes, txRes, openRes, closedRes, tillsRes, dayClosesRes] = await Promise.all(calls);
       setBalance(balanceRes.balance);
       setTransactions(txRes);
-      setOpenSessions(sessionsRes);
+      setOpenSessions(openRes);
+      setClosedSessions(closedRes);
+      setTills(tillsRes);
+      if (user.role === "admin") setDayCloses(dayClosesRes || []);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load safe data");
     } finally {
@@ -41,7 +59,32 @@ export default function SafePage() {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const tillNameById = useMemo(() => {
+    const map = {};
+    tills.forEach((t) => {
+      map[t.id] = t.name;
+    });
+    return map;
+  }, [tills]);
+
+  const pendingImport = useMemo(
+    () => closedSessions.filter((s) => !s.imported_to_safe),
+    [closedSessions]
+  );
+
+  // Server enforces this too, but mirroring it client-side lets the button be disabled up front
+  // with an explanation, rather than the admin filling in a whole count only to be told no.
+  const dayCloseBlockers = [];
+  if (openSessions.length > 0) {
+    dayCloseBlockers.push(`${openSessions.length} till session(s) still open`);
+  }
+  if (pendingImport.length > 0) {
+    dayCloseBlockers.push(`${pendingImport.length} closed till session(s) not yet imported to the safe`);
+  }
+  const canCloseDay = dayCloseBlockers.length === 0;
 
   const resetForm = () => {
     setBreakdown(EMPTY_BREAKDOWN);
@@ -80,6 +123,54 @@ export default function SafePage() {
     }
   };
 
+  const handleImport = async (session) => {
+    const tillName = tillNameById[session.till_id] || "this till";
+    if (
+      !window.confirm(
+        `Import £${Number(session.closing_counted_total).toFixed(2)} from ${tillName} into the safe? ` +
+          "Take that cash out of the till and put it in the safe now."
+      )
+    ) {
+      return;
+    }
+    setError("");
+    setSuccess("");
+    setImportingId(session.id);
+    try {
+      await api.importTillSessionToSafe(session.id);
+      setSuccess(`${tillName}'s closing cash has been added to the safe.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to import till cash to safe");
+    } finally {
+      setImportingId(null);
+    }
+  };
+
+  const handleCloseDay = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    setClosingDay(true);
+    try {
+      const result = await api.closeBusinessDay(dayCloseBreakdown, dayCloseNote || undefined);
+      setSuccess(
+        `Business day closed. Counted £${Number(result.counted_total).toFixed(2)} against an expected £` +
+          `${Number(result.expected_balance).toFixed(2)} (variance £${Number(result.variance).toFixed(2)}` +
+          (Math.abs(Number(result.variance)) > 0 ? " - please double-check the count" : "") +
+          ")."
+      );
+      setDayCloseBreakdown(EMPTY_BREAKDOWN);
+      setDayCloseNote("");
+      setShowDayClose(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to close business day");
+    } finally {
+      setClosingDay(false);
+    }
+  };
+
   if (loading) return <div className="page">Loading...</div>;
 
   return (
@@ -93,6 +184,70 @@ export default function SafePage() {
 
       {error && <div className="alert alert-error">{error}</div>}
       {success && <div className="alert alert-success">{success}</div>}
+
+      <h3>Tills ready to import</h3>
+      {pendingImport.length === 0 ? (
+        <p className="muted">No closed tills waiting to be imported into the safe.</p>
+      ) : (
+        <div className="till-import-grid">
+          {pendingImport.map((s) => (
+            <div className="card till-import-card" key={s.id}>
+              <div className="till-import-name">{tillNameById[s.till_id] || "Unknown till"}</div>
+              <div className="till-import-total">£{Number(s.closing_counted_total).toFixed(2)}</div>
+              <p className="muted">Closed {new Date(s.closed_at).toLocaleString()}</p>
+              {user.role === "admin" ? (
+                <button onClick={() => handleImport(s)} disabled={importingId === s.id}>
+                  {importingId === s.id ? "Importing..." : "Import to safe"}
+                </button>
+              ) : (
+                <p className="muted">Ask an admin to import this.</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {user.role === "admin" && (
+        <div className="card">
+          <h3>Close business day</h3>
+          {!canCloseDay && (
+            <div className="alert alert-warning">
+              Not ready to close yet: {dayCloseBlockers.join("; ")}.
+            </div>
+          )}
+          {!showDayClose ? (
+            <button disabled={!canCloseDay} onClick={() => setShowDayClose(true)}>
+              Close business day
+            </button>
+          ) : (
+            <form onSubmit={handleCloseDay}>
+              <p className="muted">
+                Take all the cash out of the safe and count it in full, then enter the count below to
+                reconcile against the ledger (expected balance £{Number(balance).toFixed(2)}).
+              </p>
+              <DenominationCounter value={dayCloseBreakdown} onChange={setDayCloseBreakdown} disabled={closingDay} />
+
+              <label htmlFor="day-close-note">Note (optional)</label>
+              <textarea
+                id="day-close-note"
+                value={dayCloseNote}
+                onChange={(e) => setDayCloseNote(e.target.value)}
+              />
+
+              <div className="actions">
+                <button type="submit" disabled={closingDay}>
+                  {closingDay
+                    ? "Closing..."
+                    : `Confirm close (counted £${breakdownTotal(dayCloseBreakdown).toFixed(2)})`}
+                </button>
+                <button type="button" disabled={closingDay} onClick={() => setShowDayClose(false)}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
 
       <form className="card" onSubmit={handleSubmit}>
         <h3>New transaction</h3>
@@ -180,13 +335,50 @@ export default function SafePage() {
             {transactions.slice(0, 20).map((t) => (
               <tr key={t.id}>
                 <td>{new Date(t.created_at).toLocaleString()}</td>
-                <td>{t.type}</td>
+                <td>
+                  {t.type}
+                  {t.is_automatic ? " (auto)" : ""}
+                </td>
                 <td className={Number(t.amount) < 0 ? "variance-flag" : ""}>£{Number(t.amount).toFixed(2)}</td>
                 <td>{t.note || "—"}</td>
               </tr>
             ))}
           </tbody>
         </table>
+      )}
+
+      {user.role === "admin" && (
+        <>
+          <h3>Business day close history</h3>
+          {dayCloses.length === 0 ? (
+            <p className="muted">No business days closed yet.</p>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Closed</th>
+                  <th>Expected</th>
+                  <th>Counted</th>
+                  <th>Variance</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dayCloses.map((d) => (
+                  <tr key={d.id}>
+                    <td>{new Date(d.closed_at).toLocaleString()}</td>
+                    <td>£{Number(d.expected_balance).toFixed(2)}</td>
+                    <td>£{Number(d.counted_total).toFixed(2)}</td>
+                    <td className={Math.abs(Number(d.variance)) > 0 ? "variance-flag" : ""}>
+                      £{Number(d.variance).toFixed(2)}
+                    </td>
+                    <td>{d.note || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
       )}
     </div>
   );

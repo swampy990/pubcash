@@ -23,12 +23,26 @@ The frontend and backend are fully decoupled: a React single-page app talks to a
 - **Till float & cash counts**: open a till session by counting the starting float
   (broken down by note/coin denomination), then close it by counting the till again. The app
   computes the expected closing amount (opening float + recorded cash sales − any drops to the
-  safe during the session) and flags the variance against what was actually counted. Admins can
-  reopen a closed session (as long as its till doesn't already have a different session open) to
-  correct a mis-counted close — the previous count is kept and pre-filled into the close form for
-  editing rather than wiped, and what it was before is recorded in the session's note either way.
+  safe during the session) and flags the variance against what was actually counted. Opening a
+  till automatically records that float as a withdrawal from the safe, so the safe balance and
+  the tills always agree on where the float cash currently is. An open session can be cancelled
+  (by whoever opened it, or an admin) if it was started in error — this reverses that automatic
+  withdrawal but leaves any manual drops made during the session untouched, and keeps the
+  session on record as cancelled rather than deleting it. Admins can reopen a closed session (as
+  long as its till doesn't already have a different session open) to correct a mis-counted close
+  — the previous count is kept and pre-filled into the close form for editing rather than wiped,
+  and what it was before is recorded in the session's note either way.
 - **Safe & drop tracking**: log cash drops from a till into the safe, admin-only withdrawals
-  (e.g. banking) and manual adjustments, and see a running safe balance.
+  (e.g. banking) and manual adjustments, and see a running safe balance. Once a till session is
+  closed, it shows up on the Safe page as a card with just its closing total (no denomination
+  detail) and an "Import to safe" button — take the counted cash out of the till and into the
+  safe, then hit the button to record that as a drop.
+- **Close business day**: once every till is closed and imported to the safe, an admin can
+  physically count everything in the safe (full note/coin breakdown) and hit "Close business
+  day" to reconcile that count against what the ledger expects, recording any variance. Like the
+  till close, it deliberately doesn't auto-correct the safe balance to match the count — it's a
+  record for someone to follow up on. The button is disabled with an explanation if any till is
+  still open or has closed cash not yet imported.
 - **Reports** (admin only): a date-range summary (floats, cash sales, variance, safe activity)
   and a variance/discrepancy alert list for sessions whose variance exceeds a configurable
   threshold.

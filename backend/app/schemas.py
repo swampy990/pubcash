@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.models import UserRole, UserStatus, TillSessionStatus, SafeTransactionType
 
+DenominationBreakdown = dict[str, int]
+
 
 # ---------- Auth / Users ----------
 
@@ -69,8 +71,6 @@ class TillOut(BaseModel):
 
 # ---------- Till Sessions ----------
 
-DenominationBreakdown = dict[str, int]
-
 
 def _validate_breakdown(value: DenominationBreakdown) -> DenominationBreakdown:
     for denom, count in value.items():
@@ -105,6 +105,10 @@ class TillSessionReopenRequest(BaseModel):
     reason: Optional[str] = None
 
 
+class TillSessionCancelRequest(BaseModel):
+    reason: Optional[str] = None
+
+
 class TillSessionOut(BaseModel):
     id: UUID
     till_id: UUID
@@ -121,6 +125,8 @@ class TillSessionOut(BaseModel):
     expected_closing_total: Optional[Decimal] = None
     variance: Optional[Decimal] = None
     note: Optional[str] = None
+    imported_to_safe: bool = False
+    imported_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -161,6 +167,7 @@ class SafeTransactionOut(BaseModel):
     created_by_id: UUID
     created_at: datetime
     note: Optional[str] = None
+    is_automatic: bool = False
 
     class Config:
         from_attributes = True
@@ -169,6 +176,32 @@ class SafeTransactionOut(BaseModel):
 class SafeBalanceOut(BaseModel):
     balance: Decimal
     as_of: datetime
+
+
+# ---------- Safe Day Close ----------
+
+class SafeDayCloseRequest(BaseModel):
+    counted_breakdown: DenominationBreakdown
+    note: Optional[str] = None
+
+    @field_validator("counted_breakdown")
+    @classmethod
+    def check_breakdown(cls, v):
+        return _validate_breakdown(v)
+
+
+class SafeDayCloseOut(BaseModel):
+    id: UUID
+    expected_balance: Decimal
+    counted_breakdown: DenominationBreakdown
+    counted_total: Decimal
+    variance: Decimal
+    closed_by_id: UUID
+    closed_at: datetime
+    note: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 
 
 # ---------- Reports ----------

@@ -20,6 +20,7 @@ from app.schemas import (
     TillSessionOpenRequest,
     TillSessionCloseRequest,
     TillSessionReopenRequest,
+    TillSessionCancelRequest,
     TillSessionOut,
 )
 
@@ -93,6 +94,24 @@ def open_till_session(
         status=TillSessionStatus.open,
     )
     db.add(session)
+    db.flush()  # assigns session.id, needed for the safe transaction below
+
+    if total > 0:
+        # Opening a till draws its float from the safe, so record that automatically rather than
+        # relying on someone to remember to log it by hand. Flagged is_automatic so the safe page
+        # can distinguish it from a manual entry, and so cancelling this session can find and
+        # reverse this specific transaction later without touching any manual drops.
+        db.add(
+            SafeTransaction(
+                type=SafeTransactionType.withdrawal,
+                amount=-total,
+                till_session_id=session.id,
+                created_by_id=current_user.id,
+                note=f"Float issued to till '{till.name}' on session open",
+                is_automatic=True,
+            )
+        )
+
     db.commit()
     db.refresh(session)
     return session
@@ -152,6 +171,83 @@ def reopen_till_session(
     return session
 
 
+@router.post("/{session_id}/cancel", response_model=TillSessionOut)
+def cancel_till_session(
+    session_id: UUID,
+    payload: TillSessionCancelRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    session = _get_session_or_404(db, session_id)
+    _authorize_session_access(session, current_user)
+
+    if session.status != TillSessionStatus.open:
+        raise HTTPException(status_code=400, detail="Only an open session can be cancelled")
+
+    # Reverse the automatic float withdrawal this session created on open, but leave any manual
+    # drops made during the session alone - cash that actually moved into the safe is real and
+    # shouldn't vanish just because the till session itself is being abandoned.
+    auto_withdrawal = (
+        db.query(SafeTransaction)
+        .filter(
+            SafeTransaction.till_session_id == session.id,
+            SafeTransaction.type == SafeTransactionType.withdrawal,
+            SafeTransaction.is_automatic == True,  # noqa: E712
+        )
+        .first()
+    )
+    if auto_withdrawal:
+        db.delete(auto_withdrawal)
+
+    audit_line = f"[Cancelled by {current_user.username} at {datetime.utcnow().isoformat()}Z]"
+    if payload.reason:
+        audit_line += f" Reason given: {payload.reason}"
+    session.note = f"{session.note}\n{audit_line}" if session.note else audit_line
+    session.status = TillSessionStatus.cancelled
+
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+@router.post("/{session_id}/import-to-safe", response_model=TillSessionOut)
+def import_till_session_to_safe(
+    session_id: UUID,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    session = _get_session_or_404(db, session_id)
+
+    if session.status != TillSessionStatus.closed:
+        raise HTTPException(status_code=400, detail="Only a closed session can be imported to the safe")
+    if session.imported_to_safe:
+        raise HTTPException(status_code=400, detail="This session's cash has already been imported to the safe")
+
+    till = db.query(Till).filter(Till.id == session.till_id).first()
+    till_name = till.name if till else "unknown till"
+
+    if session.closing_counted_total and session.closing_counted_total > 0:
+        db.add(
+            SafeTransaction(
+                type=SafeTransactionType.drop,
+                amount=session.closing_counted_total,
+                breakdown=session.closing_breakdown,
+                till_session_id=session.id,
+                created_by_id=admin.id,
+                note=f"Closing cash imported from till '{till_name}'",
+                is_automatic=True,
+            )
+        )
+
+    session.imported_to_safe = True
+    session.imported_at = datetime.utcnow()
+    session.imported_by_id = admin.id
+
+    db.commit()
+    db.refresh(session)
+    return session
+
+
 @router.post("/{session_id}/close", response_model=TillSessionOut)
 def close_till_session(
     session_id: UUID,
@@ -162,8 +258,11 @@ def close_till_session(
     session = _get_session_or_404(db, session_id)
     _authorize_session_access(session, current_user)
 
-    if session.status == TillSessionStatus.closed:
-        raise HTTPException(status_code=400, detail="This session is already closed")
+    if session.status != TillSessionStatus.open:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only an open session can be closed (this one is {session.status.value})",
+        )
 
     closing_total = compute_breakdown_total(payload.closing_breakdown)
 

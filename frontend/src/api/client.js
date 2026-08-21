@@ -95,11 +95,18 @@ export const api = {
     request(`/till-sessions/${id}/close`, { method: "POST", body: { closing_breakdown, cash_sales, note } }),
   reopenTillSession: (id, reason) =>
     request(`/till-sessions/${id}/reopen`, { method: "POST", body: { reason } }),
+  cancelTillSession: (id, reason) =>
+    request(`/till-sessions/${id}/cancel`, { method: "POST", body: { reason } }),
+  importTillSessionToSafe: (id) =>
+    request(`/till-sessions/${id}/import-to-safe`, { method: "POST" }),
 
   // Safe
   getSafeBalance: () => request("/safe/balance"),
   listSafeTransactions: () => request("/safe/transactions"),
   createSafeTransaction: (payload) => request("/safe/transactions", { method: "POST", body: payload }),
+  closeBusinessDay: (counted_breakdown, note) =>
+    request("/safe/close-business-day", { method: "POST", body: { counted_breakdown, note } }),
+  listDayCloses: () => request("/safe/day-closes"),
 
   // Reports
   getSummary: (start_date, end_date) => {

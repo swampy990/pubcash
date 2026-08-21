@@ -115,7 +115,7 @@ export default function TillSessionPage() {
     setSubmitting(true);
     try {
       await api.openTillSession(selectedTillId, breakdown, note || undefined);
-      setSuccess("Till session opened.");
+      setSuccess("Till session opened. The float has been recorded as a withdrawal from the safe.");
       resetForm();
       await loadAll();
     } catch (err) {
@@ -147,6 +147,31 @@ export default function TillSessionPage() {
       setError(err instanceof ApiError ? err.message : "Failed to close till session");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleCancel = async (session) => {
+    const tillName = tillNameById[session.till_id] || "this till";
+    if (
+      !window.confirm(
+        `Cancel the open session on ${tillName}? This reverses the float that was automatically ` +
+          "drawn from the safe when it was opened. Any manual drops already made during this " +
+          "session will NOT be reversed - they stay recorded as real cash movements."
+      )
+    ) {
+      return;
+    }
+    const reason = window.prompt("Optional: why are you cancelling this session? (recorded in the session's note)");
+
+    setError("");
+    setSuccess("");
+    try {
+      await api.cancelTillSession(session.id, reason || undefined);
+      setSuccess("Session cancelled.");
+      resetForm();
+      await loadAll();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to cancel session");
     }
   };
 
@@ -228,10 +253,21 @@ export default function TillSessionPage() {
 
           {openSessionForSelectedTill ? (
             <form className="card" onSubmit={handleClose}>
-              <h3>Close session</h3>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <h3>Close session</h3>
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={() => handleCancel(openSessionForSelectedTill)}
+                  disabled={submitting}
+                >
+                  Cancel session
+                </button>
+              </div>
               <p className="muted">
                 Opened {new Date(openSessionForSelectedTill.opened_at).toLocaleString()} with opening float £
-                {Number(openSessionForSelectedTill.opening_counted_total).toFixed(2)}
+                {Number(openSessionForSelectedTill.opening_counted_total).toFixed(2)} (automatically drawn from the
+                safe)
               </p>
 
               {openSessionForSelectedTill.closing_breakdown && (
@@ -265,7 +301,10 @@ export default function TillSessionPage() {
           ) : (
             <form className="card" onSubmit={handleOpen}>
               <h3>Open session</h3>
-              <p className="muted">Count the starting float in the till.</p>
+              <p className="muted">
+                Count the starting float in the till. This amount will automatically be recorded as
+                a withdrawal from the safe.
+              </p>
 
               <DenominationCounter value={breakdown} onChange={setBreakdown} disabled={submitting} />
 

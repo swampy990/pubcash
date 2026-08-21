@@ -70,6 +70,7 @@ class Till(Base):
 class TillSessionStatus(str, enum.Enum):
     open = "open"
     closed = "closed"
+    cancelled = "cancelled"
 
 
 class TillSession(Base):
@@ -100,9 +101,17 @@ class TillSession(Base):
 
     note = Column(Text, nullable=True)
 
+    # Set once this session's closing cash has been swept into the safe (see
+    # POST /till-sessions/{id}/import-to-safe). Kept separate from `status` because a session can
+    # sit closed for a while before someone actually carries the cash over to the safe.
+    imported_to_safe = Column(Boolean, nullable=False, default=False)
+    imported_at = Column(DateTime(timezone=True), nullable=True)
+    imported_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
     till = relationship("Till", back_populates="sessions")
     opened_by = relationship("User", foreign_keys=[opened_by_id])
     closed_by = relationship("User", foreign_keys=[closed_by_id])
+    imported_by = relationship("User", foreign_keys=[imported_by_id])
     safe_transactions = relationship("SafeTransaction", back_populates="till_session")
 
 
@@ -127,5 +136,34 @@ class SafeTransaction(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     note = Column(Text, nullable=True)
 
+    # True for transactions the system creates itself (float issued on till open, cash swept in
+    # via import-to-safe) as opposed to something a person typed into the safe form. Lets the UI
+    # and audit trail tell "the app did this automatically" apart from a manual entry, and lets a
+    # till cancellation find-and-reverse the one auto-withdrawal it created without touching any
+    # manual drops made during that same session.
+    is_automatic = Column(Boolean, nullable=False, default=False)
+
     till_session = relationship("TillSession", back_populates="safe_transactions")
     created_by = relationship("User", foreign_keys=[created_by_id])
+
+
+class SafeDayClose(Base):
+    """A record of 'Close Business Day': a physical count of the safe reconciled against what the
+    ledger (till floats issued, drops in, withdrawals, adjustments) says should be there.
+
+    Deliberately does NOT auto-correct the safe balance to match the count - like a till close,
+    it records the variance for someone to investigate rather than silently rewriting history.
+    """
+
+    __tablename__ = "safe_day_closes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    expected_balance = Column(Numeric(10, 2), nullable=False)
+    counted_breakdown = Column(JSON, nullable=False)
+    counted_total = Column(Numeric(10, 2), nullable=False)
+    variance = Column(Numeric(10, 2), nullable=False)
+    closed_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    closed_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    note = Column(Text, nullable=True)
+
+    closed_by = relationship("User", foreign_keys=[closed_by_id])

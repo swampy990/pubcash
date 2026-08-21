@@ -132,6 +132,9 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 This rebuilds only what changed and restarts those containers; the database volume is untouched.
+The backend container runs `alembic upgrade head` on every startup, so any new migrations that
+shipped with the update (e.g. new columns or tables) are applied automatically — no manual step
+and no volume wipe needed for an additive update like this one.
 
 ## Backing up the database
 

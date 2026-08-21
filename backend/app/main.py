@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
@@ -13,6 +13,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def no_store_cache_headers(request: Request, call_next):
+    # Every response here is either authenticated or login/registration - none of it should
+    # ever be cached by the browser or an intermediate proxy (user lists, till/safe figures,
+    # tokens, etc). Static assets are served by nginx/Caddy, not this app, so this has no effect
+    # on the caching we DO want for those.
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 app.include_router(auth.router)
 app.include_router(admin.router)
