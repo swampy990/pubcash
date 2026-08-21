@@ -59,6 +59,19 @@ export default function TillSessionPage() {
     return map;
   }, [tills]);
 
+  const selectedTill = useMemo(
+    () => tills.find((t) => t.id === selectedTillId),
+    [tills, selectedTillId]
+  );
+
+  // A till with no standard float configured is left at the 0 default, which isn't a real
+  // target to compare against - only warn when one's actually been set.
+  const standardFloat = selectedTill ? Number(selectedTill.standard_float) : 0;
+  const openingCountedSoFar = breakdownTotal(breakdown);
+  const openingFloatVariance =
+    standardFloat > 0 ? openingCountedSoFar - standardFloat : 0;
+  const openingFloatMismatch = standardFloat > 0 && Math.abs(openingFloatVariance) >= 0.005;
+
   const tillHasOpenSession = (tillId) => sessions.some((s) => s.till_id === tillId && s.status === "open");
 
   // When the open session for the selected till changes (switching tills, or a session just got
@@ -115,8 +128,22 @@ export default function TillSessionPage() {
     setSuccess("");
     setSubmitting(true);
     try {
-      await api.openTillSession(selectedTillId, breakdown, note || undefined);
-      setSuccess("Till session opened. The float has been recorded as a withdrawal from the safe.");
+      const result = await api.openTillSession(selectedTillId, breakdown, note || undefined);
+      let message;
+      if (standardFloat > 0) {
+        const toppedUp = Number(result.opening_counted_total) - breakdownTotal(breakdown);
+        message =
+          toppedUp > 0.005
+            ? `Till session opened. The safe topped the float up by £${toppedUp.toFixed(2)} to reach the ` +
+              `standard float of £${standardFloat.toFixed(2)}.`
+            : "Till session opened. No safe withdrawal was needed — the float was already there.";
+      } else {
+        message =
+          breakdownTotal(breakdown) > 0
+            ? "Till session opened. The float has been recorded as a withdrawal from the safe."
+            : "Till session opened.";
+      }
+      setSuccess(message);
       resetForm();
       await loadAll();
     } catch (err) {
@@ -155,9 +182,10 @@ export default function TillSessionPage() {
     const tillName = tillNameById[session.till_id] || "this till";
     if (
       !window.confirm(
-        `Cancel the open session on ${tillName}? This reverses the float that was automatically ` +
-          "drawn from the safe when it was opened. Any manual drops already made during this " +
-          "session will NOT be reversed - they stay recorded as real cash movements."
+        `Cancel the open session on ${tillName}? This reverses any automatic float top-up that was ` +
+          "drawn from the safe when it was opened (if the float was already sitting in the till, " +
+          "there may be nothing to reverse). Any manual drops already made during this session will " +
+          "NOT be reversed - they stay recorded as real cash movements."
       )
     ) {
       return;
@@ -319,9 +347,8 @@ export default function TillSessionPage() {
                 </button>
               </div>
               <p className="muted">
-                Opened {new Date(openSessionForSelectedTill.opened_at).toLocaleString()} with opening float £
-                {Number(openSessionForSelectedTill.opening_counted_total).toFixed(2)} (automatically drawn from the
-                safe)
+                Opened {new Date(openSessionForSelectedTill.opened_at).toLocaleString()} with a till float of £
+                {Number(openSessionForSelectedTill.opening_counted_total).toFixed(2)}
               </p>
 
               {openSessionForSelectedTill.closing_breakdown && (
@@ -356,9 +383,31 @@ export default function TillSessionPage() {
             <form className="card" onSubmit={handleOpen}>
               <h3>Open session</h3>
               <p className="muted">
-                Count the starting float in the till. This amount will automatically be recorded as
-                a withdrawal from the safe.
+                Count the float currently sitting in the till.
+                {standardFloat > 0
+                  ? ` This till's standard float is £${standardFloat.toFixed(2)} — if it's meant to have stayed ` +
+                    "in the drawer overnight, count what's actually there. Coming up short will automatically " +
+                    "top it back up from the safe; at or above standard, nothing is drawn."
+                  : " This amount will automatically be recorded as a withdrawal from the safe."}
               </p>
+
+              {openingFloatMismatch && (
+                <div className="alert alert-warning">
+                  {openingFloatVariance < 0 ? (
+                    <>
+                      Counted £{openingCountedSoFar.toFixed(2)} is £{Math.abs(openingFloatVariance).toFixed(2)} short
+                      of this till's standard float of £{standardFloat.toFixed(2)}. Opening will automatically draw
+                      that shortfall from the safe to top it back up.
+                    </>
+                  ) : (
+                    <>
+                      Counted £{openingCountedSoFar.toFixed(2)} is £{Math.abs(openingFloatVariance).toFixed(2)} over
+                      this till's standard float of £{standardFloat.toFixed(2)}. No safe action is taken
+                      automatically for this — worth checking why there's extra cash in the drawer.
+                    </>
+                  )}
+                </div>
+              )}
 
               <DenominationCounter value={breakdown} onChange={setBreakdown} disabled={submitting} />
 

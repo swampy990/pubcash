@@ -26,20 +26,29 @@ The frontend and backend are fully decoupled: a React single-page app talks to a
 - **Till float & cash counts**: open a till session by counting the starting float
   (broken down by note/coin denomination), then close it by counting the till again. The app
   computes the expected closing amount (opening float + recorded cash sales − any drops to the
-  safe during the session) and flags the variance against what was actually counted. Opening a
-  till automatically records that float as a withdrawal from the safe, so the safe balance and
-  the tills always agree on where the float cash currently is. An open session can be cancelled
-  (by whoever opened it, or an admin) if it was started in error — this reverses that automatic
-  withdrawal but leaves any manual drops made during the session untouched, and keeps the
-  session on record as cancelled rather than deleting it. Admins can reopen a closed session (as
-  long as its till doesn't already have a different session open) to correct a mis-counted close
-  — the previous count is kept and pre-filled into the close form for editing rather than wiped,
-  and what it was before is recorded in the session's note either way.
+  safe during the session) and flags the variance against what was actually counted. A till's
+  "standard float" (set by an admin) is treated as cash that stays physically in the drawer
+  overnight rather than being swept to the safe and redrawn fresh every day: opening a till only
+  draws from the safe to top up a shortfall against that standard, and if the count is already at
+  or above it, no safe withdrawal happens at all. If the counted float doesn't match the
+  standard, the app warns (but doesn't block) right there while counting, and records it
+  permanently in the session's note either way — a top-up if it's short, a flag to double-check
+  if there's extra cash sitting in the drawer. Tills with no standard float configured fall back
+  to drawing the whole counted float from the safe each time. An open session can be cancelled
+  (by whoever opened it, or an admin) if it was started in error — this reverses any automatic
+  top-up but leaves any manual drops made during the session untouched, and keeps the session on
+  record as cancelled rather than deleting it. Admins can reopen a closed session (as long as its
+  till doesn't already have a different session open) to correct a mis-counted close — the
+  previous count is kept and pre-filled into the close form for editing rather than wiped, and
+  what it was before is recorded in the session's note either way.
 - **Safe & drop tracking**: log cash drops from a till into the safe, admin-only withdrawals
   (e.g. banking) and manual adjustments, and see a running safe balance. Once a till session is
-  closed, it shows up on the Safe page as a card with just its closing total (no denomination
-  detail) and an "Import to safe" button — take the counted cash out of the till and into the
-  safe, then hit the button to record that as a drop.
+  closed, it shows up on the Safe page as a card with just the takings total (no denomination
+  detail) and an "Import to safe" button — the standard float stays behind in the till, so only
+  the amount above it needs walking over to the safe. Take that cash to the safe and hit the
+  button to record it as a drop; if the till closed at or below its own standard float there's
+  nothing to import, and the shortfall gets made up automatically from the safe next time that
+  till is opened.
 - **Close business day**: once every till is closed and imported to the safe, an admin can
   physically count everything in the safe (full note/coin breakdown) and hit "Close business
   day" to reconcile that count against what the ledger expects, recording any variance. Like the

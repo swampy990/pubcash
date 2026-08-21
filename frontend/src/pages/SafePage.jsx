@@ -70,6 +70,24 @@ export default function SafePage() {
     return map;
   }, [tills]);
 
+  const tillById = useMemo(() => {
+    const map = {};
+    tills.forEach((t) => {
+      map[t.id] = t;
+    });
+    return map;
+  }, [tills]);
+
+  // The standard float stays physically in the till overnight - only the takings above it
+  // actually get walked to the safe. Mirrors the backend's import-to-safe calculation exactly so
+  // the amount shown here is the amount that will really be recorded.
+  const takingsFor = (session) => {
+    const till = tillById[session.till_id];
+    const standardFloat = till ? Number(till.standard_float) : 0;
+    const closingTotal = Number(session.closing_counted_total) || 0;
+    return standardFloat > 0 ? Math.max(0, closingTotal - standardFloat) : closingTotal;
+  };
+
   const pendingImport = useMemo(
     () => closedSessions.filter((s) => !s.imported_to_safe),
     [closedSessions]
@@ -125,12 +143,17 @@ export default function SafePage() {
 
   const handleImport = async (session) => {
     const tillName = tillNameById[session.till_id] || "this till";
-    if (
-      !window.confirm(
-        `Import £${Number(session.closing_counted_total).toFixed(2)} from ${tillName} into the safe? ` +
-          "Take that cash out of the till and put it in the safe now."
-      )
-    ) {
+    const till = tillById[session.till_id];
+    const standardFloat = till ? Number(till.standard_float) : 0;
+    const takings = takingsFor(session);
+    const confirmMessage =
+      standardFloat > 0
+        ? `Import £${takings.toFixed(2)} of takings from ${tillName} into the safe, leaving the £` +
+          `${standardFloat.toFixed(2)} standard float in the till? Take the takings out and put them in the ` +
+          "safe now."
+        : `Import £${takings.toFixed(2)} from ${tillName} into the safe? Take that cash out of the till and put ` +
+          "it in the safe now.";
+    if (!window.confirm(confirmMessage)) {
       return;
     }
     setError("");
@@ -138,7 +161,11 @@ export default function SafePage() {
     setImportingId(session.id);
     try {
       await api.importTillSessionToSafe(session.id);
-      setSuccess(`${tillName}'s closing cash has been added to the safe.`);
+      setSuccess(
+        takings > 0
+          ? `£${takings.toFixed(2)} of ${tillName}'s takings has been added to the safe.`
+          : `${tillName} marked as imported — nothing to add to the safe this time.`
+      );
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to import till cash to safe");
@@ -190,20 +217,34 @@ export default function SafePage() {
         <p className="muted">No closed tills waiting to be imported into the safe.</p>
       ) : (
         <div className="till-import-grid">
-          {pendingImport.map((s) => (
-            <div className="card till-import-card" key={s.id}>
-              <div className="till-import-name">{tillNameById[s.till_id] || "Unknown till"}</div>
-              <div className="till-import-total">£{Number(s.closing_counted_total).toFixed(2)}</div>
-              <p className="muted">Closed {new Date(s.closed_at).toLocaleString()}</p>
-              {user.role === "admin" ? (
-                <button onClick={() => handleImport(s)} disabled={importingId === s.id}>
-                  {importingId === s.id ? "Importing..." : "Import to safe"}
-                </button>
-              ) : (
-                <p className="muted">Ask an admin to import this.</p>
-              )}
-            </div>
-          ))}
+          {pendingImport.map((s) => {
+            const till = tillById[s.till_id];
+            const standardFloat = till ? Number(till.standard_float) : 0;
+            const takings = takingsFor(s);
+            return (
+              <div className="card till-import-card" key={s.id}>
+                <div className="till-import-name">{tillNameById[s.till_id] || "Unknown till"}</div>
+                <div className="till-import-total">£{takings.toFixed(2)}</div>
+                <p className="muted">{standardFloat > 0 ? "takings to import" : "to import"}</p>
+                <p className="muted">
+                  Closed £{Number(s.closing_counted_total).toFixed(2)}
+                  {standardFloat > 0 && ` — £${standardFloat.toFixed(2)} float stays in the till`}
+                </p>
+                <p className="muted">Closed {new Date(s.closed_at).toLocaleString()}</p>
+                {user.role === "admin" ? (
+                  <button onClick={() => handleImport(s)} disabled={importingId === s.id}>
+                    {importingId === s.id
+                      ? "Importing..."
+                      : takings > 0
+                      ? "Import to safe"
+                      : "Mark imported"}
+                  </button>
+                ) : (
+                  <p className="muted">Ask an admin to import this.</p>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -84,30 +85,64 @@ def open_till_session(
     if existing_open:
         raise HTTPException(status_code=400, detail="This till already has an open session")
 
-    total = compute_breakdown_total(payload.opening_breakdown)
+    raw_counted = compute_breakdown_total(payload.opening_breakdown)
+
+    # The standard float is meant to physically stay in the till overnight, so opening a till
+    # should NOT draw a whole fresh float from the safe every time - only the shortfall (if the
+    # float's come up short, or this is the till's very first session ever) gets topped up from
+    # the safe. If the count is already at or above the standard, nothing is drawn at all. Tills
+    # with no standard float configured (left at the 0 default) fall back to the old behaviour of
+    # drawing the whole counted amount, since there's no "leave it behind" target to work from.
+    note = payload.note
+    topped_up_amount = Decimal("0.00")
+    effective_opening_total = raw_counted
+
+    if till.standard_float and till.standard_float > 0:
+        if raw_counted < till.standard_float:
+            topped_up_amount = till.standard_float - raw_counted
+            effective_opening_total = till.standard_float
+            note_line = (
+                f"[Float top-up at open] Counted £{raw_counted} in the till, £{topped_up_amount} "
+                f"drawn from the safe to bring it up to the standard float of £{till.standard_float}."
+            )
+            note = f"{note}\n{note_line}" if note else note_line
+        elif raw_counted > till.standard_float:
+            # More cash than the standard float was already in the till - not necessarily wrong,
+            # but no safe action is taken automatically to correct it, so it's worth a permanent
+            # note in case that's actually a mistake (e.g. yesterday's takings never got imported).
+            note_line = (
+                f"[Float over standard at open] Counted £{raw_counted} vs this till's standard "
+                f"float £{till.standard_float} (£{raw_counted - till.standard_float} over)."
+            )
+            note = f"{note}\n{note_line}" if note else note_line
+
     session = TillSession(
         till_id=till.id,
         opened_by_id=current_user.id,
         opening_breakdown=payload.opening_breakdown,
-        opening_counted_total=total,
-        note=payload.note,
+        opening_counted_total=effective_opening_total,
+        note=note,
         status=TillSessionStatus.open,
     )
     db.add(session)
     db.flush()  # assigns session.id, needed for the safe transaction below
 
-    if total > 0:
-        # Opening a till draws its float from the safe, so record that automatically rather than
-        # relying on someone to remember to log it by hand. Flagged is_automatic so the safe page
-        # can distinguish it from a manual entry, and so cancelling this session can find and
-        # reverse this specific transaction later without touching any manual drops.
+    draw_amount = topped_up_amount if (till.standard_float and till.standard_float > 0) else raw_counted
+    if draw_amount > 0:
+        # Flagged is_automatic so the safe page can distinguish it from a manual entry, and so
+        # cancelling this session can find and reverse this specific transaction later without
+        # touching any manual drops made during the session.
         db.add(
             SafeTransaction(
                 type=SafeTransactionType.withdrawal,
-                amount=-total,
+                amount=-draw_amount,
                 till_session_id=session.id,
                 created_by_id=current_user.id,
-                note=f"Float issued to till '{till.name}' on session open",
+                note=(
+                    f"Float top-up issued to till '{till.name}' on session open"
+                    if (till.standard_float and till.standard_float > 0)
+                    else f"Float issued to till '{till.name}' on session open"
+                ),
                 is_automatic=True,
             )
         )
@@ -225,16 +260,32 @@ def import_till_session_to_safe(
 
     till = db.query(Till).filter(Till.id == session.till_id).first()
     till_name = till.name if till else "unknown till"
+    standard_float = till.standard_float if till else None
 
-    if session.closing_counted_total and session.closing_counted_total > 0:
+    closing_total = session.closing_counted_total or Decimal("0.00")
+
+    # The standard float stays physically in the till overnight - only the takings above it get
+    # walked over to the safe. If the till closed at or below its own standard float, there's
+    # nothing to import; any shortfall against the standard gets made up automatically out of the
+    # safe next time this till is opened, rather than double-counted here.
+    if standard_float and standard_float > 0:
+        takings = closing_total - standard_float
+    else:
+        takings = closing_total
+
+    if takings > 0:
         db.add(
             SafeTransaction(
                 type=SafeTransactionType.drop,
-                amount=session.closing_counted_total,
+                amount=takings,
                 breakdown=session.closing_breakdown,
                 till_session_id=session.id,
                 created_by_id=admin.id,
-                note=f"Closing cash imported from till '{till_name}'",
+                note=(
+                    f"Takings imported from till '{till_name}' (£{standard_float} float left in the till)"
+                    if standard_float and standard_float > 0
+                    else f"Closing cash imported from till '{till_name}'"
+                ),
                 is_automatic=True,
             )
         )
