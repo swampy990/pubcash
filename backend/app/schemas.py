@@ -118,10 +118,12 @@ class TillSessionOut(BaseModel):
     till_id: UUID
     status: TillSessionStatus
     opened_by_id: UUID
+    opened_by_username: Optional[str] = None
     opened_at: datetime
     opening_breakdown: DenominationBreakdown
     opening_counted_total: Decimal
     closed_by_id: Optional[UUID] = None
+    closed_by_username: Optional[str] = None
     closed_at: Optional[datetime] = None
     closing_breakdown: Optional[DenominationBreakdown] = None
     closing_counted_total: Optional[Decimal] = None
@@ -131,6 +133,7 @@ class TillSessionOut(BaseModel):
     note: Optional[str] = None
     imported_to_safe: bool = False
     imported_at: Optional[datetime] = None
+    imported_by_username: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -36,9 +36,12 @@ def list_till_sessions(
     current_user: User = Depends(get_current_user),
 ):
     query = db.query(TillSession)
-    # Staff can only see sessions they personally opened; admins see everything.
-    if current_user.role != UserRole.admin:
-        query = query.filter(TillSession.opened_by_id == current_user.id)
+    # Till sessions are shared pub cash records, not personal data - every active user can see
+    # all of them (who opened/closed what and when), not just their own. This matters in
+    # practice: a staff member covering someone else's shift needs to see that a till is already
+    # open (and by whom) rather than the app looking like nothing's open, and needs to be able to
+    # close it themselves (see close_till_session below) rather than being stuck waiting for
+    # whoever opened it to come back.
     if till_id:
         query = query.filter(TillSession.till_id == till_id)
     if status_filter:
@@ -53,18 +56,20 @@ def _get_session_or_404(db: Session, session_id: UUID) -> TillSession:
     return session
 
 
-def _authorize_session_access(session: TillSession, user: User):
+def _authorize_own_session_action(session: TillSession, user: User):
+    # Used only for actions that undo or edit what someone else did (cancelling, reopening) -
+    # unlike viewing or closing a session, those stay restricted to whoever opened it, or an
+    # admin.
     if user.role != UserRole.admin and session.opened_by_id != user.id:
-        raise HTTPException(status_code=403, detail="You can only access your own till sessions")
+        raise HTTPException(status_code=403, detail="Only the person who opened this session (or an admin) can do that")
 
 
 @router.get("/{session_id}", response_model=TillSessionOut)
 def get_till_session(
     session_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    session = _get_session_or_404(db, session_id)
-    _authorize_session_access(session, current_user)
-    return session
+    # Any active user can view any till session - see the note on list_till_sessions above.
+    return _get_session_or_404(db, session_id)
 
 
 @router.post("/open", response_model=TillSessionOut, status_code=201)
@@ -214,7 +219,7 @@ def cancel_till_session(
     current_user: User = Depends(get_current_user),
 ):
     session = _get_session_or_404(db, session_id)
-    _authorize_session_access(session, current_user)
+    _authorize_own_session_action(session, current_user)
 
     if session.status != TillSessionStatus.open:
         raise HTTPException(status_code=400, detail="Only an open session can be cancelled")
@@ -307,7 +312,9 @@ def close_till_session(
     current_user: User = Depends(get_current_user),
 ):
     session = _get_session_or_404(db, session_id)
-    _authorize_session_access(session, current_user)
+    # Deliberately no ownership check here - any active user can close an open till session, not
+    # just whoever opened it (e.g. a colleague covering the rest of a shift). Cancelling or
+    # reopening someone else's session stays restricted (see _authorize_own_session_action).
 
     if session.status != TillSessionStatus.open:
         raise HTTPException(

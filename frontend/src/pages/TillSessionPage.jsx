@@ -337,18 +337,25 @@ export default function TillSessionPage() {
             <form className="card" onSubmit={handleClose}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <h3>Close session</h3>
-                <button
-                  type="button"
-                  className="danger"
-                  onClick={() => handleCancel(openSessionForSelectedTill)}
-                  disabled={submitting}
-                >
-                  Cancel session
-                </button>
+                {(user.role === "admin" || openSessionForSelectedTill.opened_by_id === user.id) && (
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => handleCancel(openSessionForSelectedTill)}
+                    disabled={submitting}
+                  >
+                    Cancel session
+                  </button>
+                )}
               </div>
               <p className="muted">
-                Opened {new Date(openSessionForSelectedTill.opened_at).toLocaleString()} with a till float of £
-                {Number(openSessionForSelectedTill.opening_counted_total).toFixed(2)}
+                Opened by {openSessionForSelectedTill.opened_by_username || "someone else"}{" "}
+                {new Date(openSessionForSelectedTill.opened_at).toLocaleString()} with a till float of £
+                {Number(openSessionForSelectedTill.opening_counted_total).toFixed(2)}.
+                {openSessionForSelectedTill.opened_by_id !== user.id && user.role !== "admin" && (
+                  <> Only {openSessionForSelectedTill.opened_by_username || "they"} or an admin can cancel it, but
+                  anyone can close it below.</>
+                )}
               </p>
 
               {openSessionForSelectedTill.closing_breakdown && (
@@ -430,6 +437,8 @@ export default function TillSessionPage() {
           <thead>
             <tr>
               <th>Till</th>
+              <th>Opened by</th>
+              <th>Closed by</th>
               <th>Closed</th>
               <th>Opening</th>
               <th>Closing</th>
@@ -443,6 +452,8 @@ export default function TillSessionPage() {
             {closedHistory.map((s) => (
               <tr key={s.id}>
                 <td>{tillNameById[s.till_id] || "—"}</td>
+                <td>{s.opened_by_username || "—"}</td>
+                <td>{s.closed_by_username || "—"}</td>
                 <td>{new Date(s.closed_at).toLocaleString()}</td>
                 <td>£{Number(s.opening_counted_total).toFixed(2)}</td>
                 <td>£{Number(s.closing_counted_total).toFixed(2)}</td>

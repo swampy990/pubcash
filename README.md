@@ -19,10 +19,15 @@ The frontend and backend are fully decoupled: a React single-page app talks to a
 - **Admin controls**: approve pending accounts, suspend/reactivate accounts, delete accounts,
   promote a staff account to admin or demote an admin back to staff, and trigger a password reset
   (generates a temporary password the user must change on next login).
-- **Roles**: `admin` (full access, including user management) and `staff` (can only see and
-  manage their own till sessions and safe entries). There must always be at least one admin
-  account, so demoting or deleting the last remaining admin is blocked, and nobody can remove
-  their own admin privileges (an admin can promote or demote anyone but themselves).
+- **Roles**: `admin` (full access, including user management, tills, importing to the safe, and
+  closing the business day) and `staff` (day-to-day till and safe operation). Till sessions are
+  shared pub records rather than personal to whoever opened them: any active user can see every
+  session (open or closed, and who opened/closed it) and can close any open one — handy when one
+  person opens a till and someone else finishes their shift. Cancelling or reopening a session
+  stays restricted to whoever opened it or an admin, since those undo what was recorded rather
+  than just completing it. There must always be at least one admin account, so demoting or
+  deleting the last remaining admin is blocked, and nobody can remove their own admin privileges
+  (an admin can promote or demote anyone but themselves).
 - **Till float & cash counts**: open a till session by counting the starting float
   (broken down by note/coin denomination), then close it by counting the till again. The app
   computes the expected closing amount (opening float + recorded cash sales − any drops to the

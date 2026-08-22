@@ -114,6 +114,21 @@ class TillSession(Base):
     imported_by = relationship("User", foreign_keys=[imported_by_id])
     safe_transactions = relationship("SafeTransaction", back_populates="till_session")
 
+    # Every till session is now visible to every active user (not just whoever opened it) so a
+    # colleague can see and close a session they didn't personally start - these expose who did
+    # what without the frontend needing separate, admin-only user lookups just to show a name.
+    @property
+    def opened_by_username(self):
+        return self.opened_by.username if self.opened_by else None
+
+    @property
+    def closed_by_username(self):
+        return self.closed_by.username if self.closed_by else None
+
+    @property
+    def imported_by_username(self):
+        return self.imported_by.username if self.imported_by else None
+
 
 class SafeTransactionType(str, enum.Enum):
     drop = "drop"               # cash moved from a till into the safe
