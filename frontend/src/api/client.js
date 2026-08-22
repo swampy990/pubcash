@@ -11,6 +11,16 @@ export function setToken(token) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+// The backend enforces a sliding 10-minute idle timeout: every authenticated request comes back
+// with a freshly-expiring token in this header, and if 10 minutes pass with no requests at all,
+// whatever token's stored will have genuinely expired server-side. Registered by AuthContext so
+// this plain module (no React state of its own) can trigger a logout-and-redirect from anywhere
+// a 401 turns up, without every page having to check for that itself.
+let onUnauthorized = null;
+export function setUnauthorizedHandler(fn) {
+  onUnauthorized = fn;
+}
+
 class ApiError extends Error {
   constructor(message, status, detail) {
     super(message);
@@ -41,6 +51,11 @@ async function request(path, { method = "GET", body, form, auth = true } = {}) {
     body: payload,
   });
 
+  // This call just proved activity, so the server has issued a token with the idle-timeout
+  // clock reset - keep using that one instead of the one we sent.
+  const refreshed = res.headers.get("X-Refreshed-Token");
+  if (refreshed) setToken(refreshed);
+
   if (res.status === 204) return null;
 
   let data = null;
@@ -54,6 +69,13 @@ async function request(path, { method = "GET", body, form, auth = true } = {}) {
   }
 
   if (!res.ok) {
+    // A 401 on an authenticated call means the token's gone bad or idled out - distinct from a
+    // 401 on /auth/login itself, which just means the wrong password was entered and shouldn't
+    // force a logout of nothing.
+    if (res.status === 401 && auth) {
+      setToken(null);
+      if (onUnauthorized) onUnauthorized();
+    }
     const message = (data && data.detail) || res.statusText || "Request failed";
     throw new ApiError(message, res.status, data && data.detail);
   }

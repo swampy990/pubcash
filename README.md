@@ -15,7 +15,10 @@ The frontend and backend are fully decoupled: a React single-page app talks to a
 
 - **Login / registration**: users register with a username, password, and a shared invite code
   (set via `REGISTRATION_INVITE_CODE`); new accounts start as `pending` and cannot log in until
-  an admin approves them.
+  an admin approves them. A login automatically expires after 10 idle minutes with no requests
+  at all (configurable via `SESSION_IDLE_TIMEOUT_MINUTES`) — but it's a sliding timeout, so
+  anyone actively using the app stays logged in indefinitely; it's specifically a terminal left
+  logged in and untouched that gets kicked back to the login screen.
 - **Admin controls**: approve pending accounts, suspend/reactivate accounts, delete accounts,
   promote a staff account to admin or demote an admin back to staff, and trigger a password reset
   (generates a temporary password the user must change on next login).

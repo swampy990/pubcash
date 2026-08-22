@@ -12,6 +12,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Without this, the browser's fetch() silently can't read X-Refreshed-Token even though the
+    # server sent it - only a small default set of "simple" response headers are exposed to
+    # script across origins unless explicitly listed here. This is what makes the sliding
+    # idle-timeout renewal (see app.deps.get_current_user) actually reach the frontend.
+    expose_headers=["X-Refreshed-Token"],
 )
 
 

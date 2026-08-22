@@ -12,7 +12,13 @@ class Settings(BaseSettings):
     # Auth / JWT
     secret_key: str = "change-me-in-production"
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60 * 12  # 12 hours
+
+    # This is a SLIDING idle timeout, not a fixed session length: every authenticated request
+    # (see app.deps.get_current_user) issues a freshly-expiring token, so a user who's actively
+    # using the app effectively never gets logged out - but if 10 minutes pass with no requests
+    # at all, whatever token they're holding will have actually expired and they're logged out.
+    # This matters most on a shared till-side terminal that might get walked away from unlocked.
+    session_idle_timeout_minutes: int = 10
 
     # Initial admin bootstrap (used by seed script)
     initial_admin_username: str = "admin"

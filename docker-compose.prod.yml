@@ -45,6 +45,7 @@ services:
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD must be set in .env for production}
       VARIANCE_ALERT_THRESHOLD: ${VARIANCE_ALERT_THRESHOLD:-5.00}
       REGISTRATION_INVITE_CODE: ${REGISTRATION_INVITE_CODE:?REGISTRATION_INVITE_CODE must be set in .env for production - anyone with the URL can otherwise register}
+      SESSION_IDLE_TIMEOUT_MINUTES: ${SESSION_IDLE_TIMEOUT_MINUTES:-10}
 
   frontend:
     build:

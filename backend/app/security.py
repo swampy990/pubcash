@@ -19,7 +19,7 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
 
 
 def create_access_token(subject: str, extra_claims: dict | None = None) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.session_idle_timeout_minutes)
     to_encode = {"sub": subject, "exp": expire}
     if extra_claims:
         to_encode.update(extra_claims)

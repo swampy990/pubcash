@@ -8,7 +8,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const { login } = useAuth();
+  const { login, sessionExpired } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -34,6 +34,11 @@ export default function Login() {
         <h1>Pub Cash Management</h1>
         <p className="auth-subtitle">Log in to your account</p>
 
+        {sessionExpired && !error && (
+          <div className="alert alert-warning">
+            You were logged out after a period of inactivity. Please log in again.
+          </div>
+        )}
         {error && <div className="alert alert-error">{error}</div>}
 
         <label htmlFor="username">Username</label>

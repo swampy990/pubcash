@@ -200,6 +200,10 @@ You should see it obtain a certificate within a few seconds once DNS resolution 
   droplet restarts.
 - **Rotating `SECRET_KEY`**: changing it invalidates every existing login session (everyone gets
   logged out) — not harmful, just worth doing at a quiet time.
+- **Idle logout**: logins expire after 10 minutes with no activity at all (it's a sliding
+  window, so anyone actively using the app never hits it). Adjust `SESSION_IDLE_TIMEOUT_MINUTES`
+  in `.env` if 10 is too short or too long for how the till side actually gets used, then
+  redeploy as usual.
 - **Local development is unaffected**: `docker-compose.yml` (no `.prod`) still runs everything
   on `localhost` with published ports, exactly as before, for working on the app on your laptop.
 - **Dev and prod now use separate Docker volumes**: both compose files set an explicit project
